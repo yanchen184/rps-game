@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import type { Choice, Result, GameRecord, PlayerStats } from './types';
 import { playGame, getHistory, getStats } from './api';
 
-const VERSION = '1.0.0';
+const VERSION = '1.1.0';
 
 const CHOICES: { choice: Choice; emoji: string; label: string }[] = [
   { choice: 'rock', emoji: '✊', label: 'Rock' },
@@ -22,22 +22,80 @@ const RESULT_LABELS: Record<Result, string> = {
   draw: 'Draw!',
 };
 
-function getPlayerId(): string {
-  let id = localStorage.getItem('rps-player-id');
-  if (!id) {
-    id = crypto.randomUUID();
-    localStorage.setItem('rps-player-id', id);
-  }
-  return id;
+// Login Page Component
+function LoginPage({ onLogin }: { onLogin: (name: string) => void }) {
+  const [name, setName] = useState('');
+  const [error, setError] = useState('');
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmedName = name.trim();
+    if (trimmedName.length < 2) {
+      setError('Name must be at least 2 characters');
+      return;
+    }
+    if (trimmedName.length > 20) {
+      setError('Name must be 20 characters or less');
+      return;
+    }
+    onLogin(trimmedName);
+  };
+
+  return (
+    <div className="min-h-screen flex flex-col items-center justify-center p-4 text-white">
+      <div className="bg-white/5 backdrop-blur-sm rounded-2xl p-8 w-full max-w-md">
+        <div className="text-center mb-8">
+          <div className="text-6xl mb-4">✊✋✌️</div>
+          <h1 className="text-3xl font-bold mb-2">Rock Paper Scissors</h1>
+          <p className="text-gray-400">vs AI - v{VERSION}</p>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm text-gray-400 mb-2">Enter your name to play</label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => {
+                setName(e.target.value);
+                setError('');
+              }}
+              placeholder="Your name..."
+              className="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-blue-400 text-lg"
+              autoFocus
+              data-testid="login-input"
+            />
+            {error && <p className="text-red-400 text-sm mt-2">{error}</p>}
+          </div>
+
+          <button
+            type="submit"
+            className="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-4 rounded-lg transition-colors duration-200 text-lg"
+            data-testid="login-button"
+          >
+            Start Playing
+          </button>
+        </form>
+
+        <div className="mt-6 text-center text-gray-500 text-sm">
+          <p>Your game history will be saved</p>
+        </div>
+      </div>
+    </div>
+  );
 }
 
-function getPlayerName(): string {
-  return localStorage.getItem('rps-player-name') || 'Player';
-}
-
-function App() {
-  const [playerId] = useState(getPlayerId);
-  const [playerName, setPlayerName] = useState(getPlayerName);
+// Game Page Component
+function GamePage({ playerName, onLogout }: { playerName: string; onLogout: () => void }) {
+  const [playerId] = useState(() => {
+    // Use playerName as part of the ID for consistent history
+    let id = localStorage.getItem(`rps-player-id-${playerName}`);
+    if (!id) {
+      id = crypto.randomUUID();
+      localStorage.setItem(`rps-player-id-${playerName}`, id);
+    }
+    return id;
+  });
   const [isPlaying, setIsPlaying] = useState(false);
   const [lastResult, setLastResult] = useState<{
     playerChoice: Choice;
@@ -48,6 +106,7 @@ function App() {
   const [stats, setStats] = useState<PlayerStats | null>(null);
   const [showAnimation, setShowAnimation] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   const loadData = useCallback(async () => {
     try {
@@ -59,16 +118,14 @@ function App() {
       setStats(statsData);
     } catch (err) {
       console.error('Failed to load data:', err);
+    } finally {
+      setIsLoading(false);
     }
   }, [playerId]);
 
   useEffect(() => {
     loadData();
   }, [loadData]);
-
-  useEffect(() => {
-    localStorage.setItem('rps-player-name', playerName);
-  }, [playerName]);
 
   const handlePlay = async (choice: Choice) => {
     if (isPlaying) return;
@@ -102,28 +159,40 @@ function App() {
     ? Math.round((stats.wins / stats.total) * 100)
     : 0;
 
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center text-white">
+        <div className="text-xl">Loading...</div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen flex flex-col items-center justify-center p-4 text-white">
       {/* Header */}
-      <div className="text-center mb-8">
+      <div className="text-center mb-6">
         <h1 className="text-4xl font-bold mb-2">Rock Paper Scissors</h1>
         <p className="text-gray-400">vs AI - v{VERSION}</p>
       </div>
 
-      {/* Player Name Input */}
-      <div className="mb-6">
-        <input
-          type="text"
-          value={playerName}
-          onChange={(e) => setPlayerName(e.target.value || 'Player')}
-          placeholder="Enter your name"
-          className="bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-center text-white placeholder-gray-400 focus:outline-none focus:border-blue-400"
-        />
+      {/* Player Info */}
+      <div className="flex items-center gap-4 mb-6">
+        <div className="bg-white/10 rounded-lg px-4 py-2 flex items-center gap-2">
+          <span className="text-gray-400">Player:</span>
+          <span className="font-bold text-lg">{playerName}</span>
+        </div>
+        <button
+          onClick={onLogout}
+          className="bg-white/10 hover:bg-white/20 text-gray-300 hover:text-white px-3 py-2 rounded-lg transition-colors text-sm"
+          data-testid="logout-button"
+        >
+          Change Player
+        </button>
       </div>
 
       {/* Stats */}
       {stats && (
-        <div className="flex gap-6 mb-8 text-center">
+        <div className="flex gap-4 mb-6 text-center">
           <div className="bg-green-500/20 rounded-lg px-4 py-2">
             <div className="text-2xl font-bold text-green-400">{stats.wins}</div>
             <div className="text-xs text-gray-400">Wins</div>
@@ -144,7 +213,7 @@ function App() {
       )}
 
       {/* Game Area */}
-      <div className="bg-white/5 backdrop-blur-sm rounded-2xl p-8 mb-8 w-full max-w-md">
+      <div className="bg-white/5 backdrop-blur-sm rounded-2xl p-8 mb-6 w-full max-w-md">
         {/* Result Display */}
         <div className="flex justify-center items-center gap-8 mb-8 h-32">
           {showAnimation ? (
@@ -209,10 +278,12 @@ function App() {
 
       {/* History */}
       <div className="w-full max-w-md">
-        <h2 className="text-xl font-bold mb-4 text-center">Recent Games</h2>
+        <h2 className="text-xl font-bold mb-4 text-center">
+          {playerName}'s Recent Games
+        </h2>
         <div className="bg-white/5 backdrop-blur-sm rounded-xl overflow-hidden">
           {history.length === 0 ? (
-            <div className="p-4 text-center text-gray-500">No games yet</div>
+            <div className="p-4 text-center text-gray-500">No games yet - start playing!</div>
           ) : (
             <div className="divide-y divide-white/10">
               {history.map((game, index) => (
@@ -237,11 +308,34 @@ function App() {
       </div>
 
       {/* Footer */}
-      <div className="mt-8 text-center text-gray-500 text-sm">
+      <div className="mt-6 text-center text-gray-500 text-sm">
         <p>Game Hub - Rock Paper Scissors v{VERSION}</p>
       </div>
     </div>
   );
+}
+
+// Main App Component
+function App() {
+  const [playerName, setPlayerName] = useState<string | null>(() => {
+    return localStorage.getItem('rps-current-player');
+  });
+
+  const handleLogin = (name: string) => {
+    localStorage.setItem('rps-current-player', name);
+    setPlayerName(name);
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('rps-current-player');
+    setPlayerName(null);
+  };
+
+  if (!playerName) {
+    return <LoginPage onLogin={handleLogin} />;
+  }
+
+  return <GamePage playerName={playerName} onLogout={handleLogout} />;
 }
 
 export default App;
